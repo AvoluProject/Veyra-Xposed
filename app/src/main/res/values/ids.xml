@@ -1,0 +1,6 @@
+<resources>
+    <item name="veyra_snapshot" type="id" />
+    <item name="veyra_signature" type="id" />
+    <item name="veyra_motion_token" type="id" />
+    <item name="veyra_last_page" type="id" />
+</resources>
