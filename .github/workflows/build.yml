@@ -1,4 +1,4 @@
-name: Build Veyra Settings 1.0.0
+name: Build Veyra Settings 1.0.1
 
 on:
   push:
@@ -8,9 +8,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: veyra-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -21,7 +26,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
+      - name: Set up Android SDK command-line tools
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: 12266719
@@ -29,30 +34,45 @@ jobs:
           log-accepted-android-sdk-licenses: false
           packages: platform-tools
 
-      - name: Install Android 36 platform and build tools
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Install Android 17 SDK platform and Build Tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --list --channel=1 > "$RUNNER_TEMP/sdk-packages.txt"
+
+          if ! grep -Eq 'platforms;android-37\.0[[:space:]]*\|' "$RUNNER_TEMP/sdk-packages.txt"; then
+            echo 'Required Android API 37.0 package was not listed by sdkmanager.'
+            grep -E 'platforms;android-(36|37)' "$RUNNER_TEMP/sdk-packages.txt" || true
+            exit 1
+          fi
+          platform_package='platforms;android-37.0'
+
+          echo "Installing $platform_package and Build Tools 36.0.0"
+          sdkmanager --channel=1 --install "$platform_package" "build-tools;36.0.0"
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.11.1'
+          gradle-version: '9.3.1'
 
-      - name: Validate project metadata and source structure
+      - name: Validate project structure
         run: python tools/verify_static.py
 
-      - name: Assemble signed premium APK
+      - name: Assemble release APK
         run: gradle --no-daemon :app:assembleRelease
 
-      - name: Rename installable APK
+      - name: Package APK and checksum
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk dist/Veyra-Settings-1.0.0.apk
-          sha256sum dist/Veyra-Settings-1.0.0.apk | tee dist/SHA256SUMS.txt
+          cp app/build/outputs/apk/release/app-release.apk dist/Veyra-Settings-1.0.1.apk
+          sha256sum dist/Veyra-Settings-1.0.1.apk | tee dist/SHA256SUMS.txt
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Veyra-Settings-1.0.0
+          name: Veyra-Settings-1.0.1
           path: dist/*
           if-no-files-found: error
           retention-days: 30

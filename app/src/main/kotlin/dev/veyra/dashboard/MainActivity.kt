@@ -26,6 +26,7 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private lateinit var status: TextView
     private var observer: (() -> Unit)? = null
+    private val controlRefreshers = mutableListOf<() -> Unit>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,14 +54,19 @@ class MainActivity : Activity() {
         buildSystemSection()
         buildFooter()
 
-        observer = { refreshStatus() }
+        observer = {
+            refreshStatus()
+            refreshControls()
+        }
         VeyraServiceManager.addObserver(observer!!)
         refreshStatus()
+        refreshControls()
     }
 
     override fun onResume() {
         super.onResume()
         refreshStatus()
+        refreshControls()
     }
 
     override fun onDestroy() {
@@ -138,7 +144,7 @@ class MainActivity : Activity() {
     }
 
     private fun buildFooter() {
-        root.addView(text("VEYRA SETTINGS 1.0.0", 10f, muted, true).apply {
+        root.addView(text("VEYRA SETTINGS 1.0.1", 10f, muted, true).apply {
             letterSpacing = 0.12f
             gravity = Gravity.CENTER
             setPadding(0, dp(12), 0, 0)
@@ -167,13 +173,22 @@ class MainActivity : Activity() {
         labels.addView(text(title, 14f, ink, true))
         labels.addView(text(subtitle, 11f, muted).apply { setPadding(0, dp(3), 0, 0) })
         row.addView(labels, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val toggle = Switch(this).apply {
-            isChecked = VeyraServiceManager.readBoolean(key, fallback)
-            setOnCheckedChangeListener { _, checked ->
+
+        val toggle = Switch(this)
+        fun attachListener() {
+            toggle.setOnCheckedChangeListener { _, checked ->
                 val saved = VeyraServiceManager.writeBoolean(key, checked)
                 if (!saved) toast("LSPosed belum terhubung. Pengaturan belum tersimpan.")
             }
         }
+        toggle.isChecked = VeyraServiceManager.readBoolean(key, fallback)
+        attachListener()
+        controlRefreshers += {
+            toggle.setOnCheckedChangeListener(null)
+            toggle.isChecked = VeyraServiceManager.readBoolean(key, fallback)
+            attachListener()
+        }
+
         row.addView(toggle)
         parent.addView(row)
     }
@@ -186,28 +201,50 @@ class MainActivity : Activity() {
         }
         val labelRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         labelRow.addView(text(title, 14f, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
-        val value = text("${VeyraServiceManager.readInt(key, fallback)}$suffix", 13f, accent, true)
+        val initialValue = VeyraServiceManager.readInt(key, fallback).coerceIn(min, max)
+        val value = text("$initialValue$suffix", 13f, accent, true)
         labelRow.addView(value)
         block.addView(labelRow)
         block.addView(text(subtitle, 11f, muted).apply { setPadding(0, dp(3), 0, dp(4)) })
+
         val seek = SeekBar(this).apply {
             this.max = max - min
-            progress = (VeyraServiceManager.readInt(key, fallback).coerceIn(min, max) - min)
+            progress = initialValue - min
             progressTintList = android.content.res.ColorStateList.valueOf(accent)
             thumbTintList = android.content.res.ColorStateList.valueOf(accent)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+        }
+        fun attachListener() {
+            seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                     value.text = "${progress + min}$suffix"
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                    val v = (seekBar?.progress ?: 0) + min
-                    if (!VeyraServiceManager.writeInt(key, v)) toast("LSPosed belum terhubung.")
+                    val current = (seekBar?.progress ?: 0) + min
+                    if (!VeyraServiceManager.writeInt(key, current)) toast("LSPosed belum terhubung.")
                 }
             })
         }
+        attachListener()
+        controlRefreshers += {
+            val current = VeyraServiceManager.readInt(key, fallback).coerceIn(min, max)
+            seek.setOnSeekBarChangeListener(null)
+            seek.progress = current - min
+            value.text = "$current$suffix"
+            attachListener()
+        }
+
         block.addView(seek)
         parent.addView(block)
+    }
+
+    private fun refreshControls() {
+        if (!VeyraServiceManager.isConnected()) return
+        controlRefreshers.forEach { refresher ->
+            runCatching(refresher).onFailure {
+                android.util.Log.w("VeyraDashboard", "Unable to refresh a control", it)
+            }
+        }
     }
 
     private fun sectionTitle(value: String) {

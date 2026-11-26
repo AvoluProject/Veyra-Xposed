@@ -9,7 +9,7 @@ import dev.veyra.xposed.hooks.SettingsHookInstaller
 class VeyraModule : XposedModule() {
     override fun onModuleLoaded(param: XposedModuleInterface.ModuleLoadedParam) {
         super.onModuleLoaded(param)
-        log(Log.INFO, TAG, "Veyra 1.0.0 loaded in ${param.processName}; API=${getApiVersion()}")
+        log(Log.INFO, TAG, "Veyra 1.0.1 loaded in ${param.processName}; API=${getApiVersion()}")
     }
 
     override fun onPackageReady(param: XposedModuleInterface.PackageReadyParam) {

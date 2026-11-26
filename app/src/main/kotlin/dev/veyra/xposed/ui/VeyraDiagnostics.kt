@@ -17,7 +17,8 @@ object VeyraDiagnostics {
             append('|').append(root.javaClass.name)
         }
         val tree = StringBuilder()
-        appendTree(root, tree, 0)
+        val visited = intArrayOf(0)
+        appendTree(root, tree, 0, visited)
         val hash = tree.toString().hashCode()
         synchronized(lastDump) {
             if (lastDump[signature] == hash) return
@@ -27,14 +28,20 @@ object VeyraDiagnostics {
         tree.lineSequence().take(240).forEach { Log.d(TAG, it) }
     }
 
-    private fun appendTree(view: View, out: StringBuilder, depth: Int) {
-        if (depth > 12 || out.lineSequence().count() > 260) return
+    private fun appendTree(view: View, out: StringBuilder, depth: Int, visited: IntArray) {
+        if (depth > 12 || visited[0] >= 260) return
+        visited[0]++
         val id = if (view.id == View.NO_ID) "no-id" else
             runCatching { view.resources.getResourceEntryName(view.id) }.getOrDefault("unknown-id")
         out.append("  ".repeat(depth)).append(view.javaClass.name)
             .append(" id=").append(id)
             .append(" size=").append(view.width).append('x').append(view.height)
             .append(" clickable=").append(view.isClickable).append('\n')
-        if (view is ViewGroup) for (i in 0 until minOf(view.childCount, 40)) appendTree(view.getChildAt(i), out, depth + 1)
+        if (view is ViewGroup) {
+            for (i in 0 until minOf(view.childCount, 40)) {
+                if (visited[0] >= 260) break
+                appendTree(view.getChildAt(i), out, depth + 1, visited)
+            }
+        }
     }
 }

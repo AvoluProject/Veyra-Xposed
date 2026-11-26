@@ -1,91 +1,106 @@
-# Veyra Xposed 1.0.0
+# Veyra Xposed 1.0.1
 
-**Goal:** a deeply iOS-26-inspired visual and interaction layer for the real Samsung Settings app on the supplied One UI 8.5 / Android 16 target.
+Veyra is an LSPosed module with a native settings dashboard. It applies a lightweight iOS-inspired visual treatment to the real Samsung Settings view tree while leaving native Settings controllers and preference actions in place.
 
-Veyra is a single installable APK: the LSPosed module and its configuration dashboard. Zygisk is intentionally optional and not shipped in 1.0.0 because the current work only needs Java/Kotlin hooks inside `com.android.settings`.
+## Important scope and safety notes
 
-## Target profile confirmed from supplied files
+- Xposed scope is limited to `com.android.settings` in `app/src/main/resources/META-INF/xposed/scope.list`.
+- Veyra does not replace the Samsung Settings APK, patch `/system`, or ship a Zygisk native component.
+- If Settings becomes unstable, disable Veyra in LSPosed and force-stop Settings before reopening it.
+- The glass material is a frosted/tinted approximation, not Apple's proprietary optical refraction.
+- View-tree styling and classification use traversal caps, and saved view state is restored when a setting is switched off or a recycled preference row changes identity.
+- The source package has static checks, but an APK build and device runtime test are still required before calling this release verified.
+
+## Target profile
+
+The source notes in `docs/TARGET-ANALYSIS.md` describe the supplied One UI 8.5 / Android 16 Settings target:
 
 - Settings package: `com.android.settings`
-- Android 16 / API 36
-- One UI property 80500 (8.5)
-- Supplied product identity: SM-A346N / device codename `a22` / build `A346NKSUEFZE6`
-- Main Settings activity: `com.android.settings.homepage.SettingsHomepageActivity`
+- Runtime target: Android 16 / API 36
+- Main activity: `com.android.settings.homepage.SettingsHomepageActivity`
 - Main fragment: `com.android.settings.homepage.TopLevelSettings`
 - Sub-settings activity: `com.android.settings.SubSettings`
 
-See [`docs/TARGET-ANALYSIS.md`](docs/TARGET-ANALYSIS.md).
+The device identifiers in the supplied dump contain mixed/spoofed model information. Veyra therefore scopes by the Settings package and does not use the reported model name as a runtime gate.
 
-## Architecture
+## Build toolchain
 
-- `VeyraModule`: modern libxposed 102 entry point.
-- `SettingsHookInstaller`: process hooks limited to the Settings package.
-- `SettingsPageClassifier`: recognizes known pages from activity/fragment/resource signals.
-- `SettingsUiEngine`: presentation-only view styling; does not replace preference listeners or system controllers.
-- `GlassSurfaceDrawable`: low-cost frosted-glass approximation.
-- `VeyraMotionEngine`: spring entrance motion.
-- `VeyraDiagnostics`: view classes/resource IDs/sizes only; avoids logging visible text and user values.
-- `MainActivity`: dashboard writes to libxposed RemotePreferences.
+The Android build uses one consistent toolchain:
 
-The supplied Settings APK is used as an analysis target only. It is a system app and must not be installed over the firmware app.
+| Component | Version |
+|---|---:|
+| Android Gradle Plugin | 9.1.1 |
+| Gradle | 9.3.1 |
+| JDK | 17 |
+| Kotlin | AGP built-in Kotlin (KGP 2.2.10 runtime) |
+| Compile SDK | Android 17 / API 37.0 |
+| Target SDK | API 36 |
+| Build Tools | 36.0.0 |
+| libxposed API | 102.0.0 |
+| libxposed service | 102.0.0 |
 
-## Build with GitHub Actions (recommended from Android/Termux)
+`compileSdk` is set to Android 17 API 37.0 because libxposed 102 AAR metadata requires API 37 or later. `targetSdk` intentionally remains 36 so this module does not opt into Android 17 target behavior. Android publishes the 37.0 platform as the minor-versioned package `platforms;android-37.0`; the project uses the AGP minor-version `compileSdk` DSL instead of the older integer-only shorthand.
 
-1. Create an empty GitHub repository named `Veyra-Xposed`.
-2. Extract this ZIP into Termux shared storage. Then run:
+Official compatibility references:
 
-   ```sh
-   pkg update -y
-   pkg install git unzip -y
-   termux-setup-storage
-   cd ~/storage/downloads
-   unzip Veyra-Xposed-1.0.0-Premium-src.zip
-   cd Veyra-Xposed-1.0.0-Premium
-   git init -b main
-   git add .
-   git commit -m "Veyra Settings 1.0.0"
-   git remote add origin https://github.com/USERNAME/Veyra-Xposed.git
-   git push -u origin main
-   ```
+- [AGP 9.1.1 compatibility and API 37.0](https://developer.android.com/build/releases/agp-9-1-0-release-notes)
+- [Android SDK minor API `compileSdk` syntax](https://developer.android.com/build)
+- [libxposed API](https://github.com/libxposed/api)
+- [libxposed service](https://github.com/libxposed/service)
 
-   Replace `USERNAME` with the GitHub account name. GitHub may ask you to authenticate in a browser/token flow.
+## Build with GitHub Actions
 
-3. Open the repository on GitHub, then **Actions** → **Build Veyra Settings 1.0.0**. The workflow installs JDK 17, Android SDK 37, and Gradle 9.3.1 and runs `:app:assembleRelease`.
-4. When the run is green, open the run → **Artifacts** → `Veyra-Settings-1.0.0`. Download and extract it. The installable APK is `Veyra-Settings-1.0.0.apk`.
+1. Push this source to the `main` branch of your GitHub repository.
+2. Open **Actions** and run **Build Veyra Settings 1.0.1**.
+3. Wait for the `Assemble release APK` step to finish.
+4. Open the successful run and download the `Veyra-Settings-1.0.1` artifact.
+5. The APK is `Veyra-Settings-1.0.1.apk`; `SHA256SUMS.txt` contains its checksum.
 
-The Release variant is signed with the workflow runner's debug key so the APK is installable without uploading a private key. Each fresh GitHub runner may create a different debug signing key; a later rebuild may therefore require uninstalling the previous APK before installing the new one. For long-term update continuity, configure a private signing key through GitHub Secrets before distributing the module.
+The workflow installs the Android 37.0 SDK platform and Build Tools 36.0.0, validates project metadata, builds `:app:assembleRelease`, and uploads the APK. It does not request the removed SDK package named `tools`.
+
+### Update an existing Termux clone
+
+Extract this ZIP into a **new** folder, then run the included helper from that extracted folder:
+
+```sh
+bash tools/apply-upgrade-termux.sh /storage/emulated/0/Download/Veyra-Xposed-1.0.0-Premium
+```
+
+The helper copies the new source files into the existing Git clone, preserves its `.git` directory, stages changes, commits, and pushes `main`. Change the destination path if your current clone is stored elsewhere.
 
 ## Install and activate
 
-1. Install `Veyra-Settings-1.0.0.apk` normally.
-2. Open LSPosed Manager and enable **Veyra Settings**.
-3. Confirm its scope is `com.android.settings` only. `scope.list` is already restricted to this package.
-4. Force-stop the Settings app (or reboot) so its process is recreated with the module.
-5. Open Veyra Settings dashboard. Confirm that the LSPosed connection status is connected.
-6. Open Android Settings and inspect the home page and sub-pages.
-7. Enable diagnostics temporarily if required. Visit Settings and run this in Termux:
+1. Install `Veyra-Settings-1.0.1.apk` normally.
+2. Enable **Veyra Settings** in LSPosed.
+3. Confirm that the only scope is `com.android.settings`.
+4. Force-stop Settings or reboot so its process is recreated with the module.
+5. Open the Veyra dashboard and check the LSPosed service status.
+6. Open Android Settings and inspect the home screen and sub-pages.
 
-   ```sh
-   bash tools/collect-diagnostics.sh
-   ```
+The release variant is signed with the GitHub runner's debug key for personal testing. Fresh GitHub runners can use different debug keys, so installing a later build over an earlier one may require uninstalling the previous APK first. Configure a private signing key through GitHub Secrets before distributing repeatable updates.
 
-   It saves `Download/VeyraDiagnostics.txt` with class names and resource IDs only; do not share passwords, Wi-Fi credentials, account data, or other private screen contents.
+## Diagnostics
 
-## Rollback
+Optional diagnostics record view class names, resource IDs, and dimensions only. They do not read visible text, account details, Wi-Fi names, or preference values. Enable diagnostics in the dashboard, visit Settings, and run:
 
-Disable Veyra Settings in LSPosed and force-stop Settings. The module stores original in-memory view properties and does not replace the system APK or patch system partitions. If a Settings page crashes, disable the module from LSPosed before opening Settings again.
+```sh
+bash tools/collect-diagnostics.sh
+```
 
-## Important fidelity note
+Review the generated file before sharing it.
 
-The 1.0.0 source package is a premium-oriented implementation baseline, not a claim of verified 100% pixel identity. It restyles the real Settings view tree and bound preference rows while preserving native controllers. A truly close per-page match needs runtime screenshots and class/resource diagnostics from the exact installed build; unknown fragments should not be guessed. Liquid Glass here is a lightweight frosted/tinted material, not Apple's proprietary optical implementation.
+## Static validation versus full verification
 
-## Build versions
+Run:
 
-- Android Gradle Plugin: 9.1.0
-- Gradle: 9.3.1
-- Kotlin Gradle Plugin: 2.4.0
-- Compile SDK: 37 (the module still targets Android 16 / API 36)
-- Android compile SDK: 37 / target SDK: 36
-- Java: 17
-- libxposed API: 102.0.0
-- libxposed service: 102.0.1
+```sh
+python tools/verify_static.py
+```
+
+This checks manifest declarations, Xposed metadata, dependency and toolchain alignment, scope restriction, and required source files. It does **not** replace `:app:assembleRelease`, LSPosed activation, or device testing. This environment has not produced or verified the final APK.
+
+## Current implementation limits
+
+- The UI engine restyles existing Android/Samsung views and preference rows; it does not reconstruct every Samsung page into a completely new iOS navigation hierarchy.
+- Search placement, per-page row grouping, exact icons, and Samsung-specific controls still need runtime captures and screenshots from the exact firmware build.
+- `GlassSurfaceDrawable` uses a gradient/tint and highlight rather than true optical blur/refraction.

@@ -1,14 +1,12 @@
 package dev.veyra.xposed.ui
 
 import android.app.Activity
-import android.view.View
 import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import androidx.dynamicanimation.animation.DynamicAnimation
 import androidx.dynamicanimation.animation.SpringAnimation
 import androidx.dynamicanimation.animation.SpringForce
 import dev.veyra.xposed.R
-import dev.veyra.xposed.target.SettingsPageClassifier
 
 object VeyraMotionEngine {
     fun animatePage(activity: Activity, root: ViewGroup, page: String, strength: Int) {

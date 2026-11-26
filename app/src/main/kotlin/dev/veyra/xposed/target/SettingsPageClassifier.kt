@@ -13,7 +13,7 @@ object SettingsPageClassifier {
         val activityName = activity.javaClass.name
         val fragmentName = fragmentClass.orEmpty()
         val signals = linkedSetOf(activityName, fragmentName)
-        if (root != null) collectResourceNames(root, 0, signals)
+        if (root != null) collectResourceNames(root, 0, signals, intArrayOf(0))
         val joined = signals.joinToString("|").lowercase()
 
         val page = when {
@@ -31,15 +31,19 @@ object SettingsPageClassifier {
         return Result(page, activityName, fragmentName, signals)
     }
 
-    private fun collectResourceNames(view: View, depth: Int, out: MutableSet<String>) {
-        if (depth > 12 || out.size > 240) return
+    private fun collectResourceNames(view: View, depth: Int, out: MutableSet<String>, visited: IntArray) {
+        if (depth > 12 || visited[0] >= 260) return
+        visited[0]++
         val id = view.id
         if (id != View.NO_ID) {
             runCatching { view.resources.getResourceEntryName(id) }.getOrNull()?.let(out::add)
         }
         out += view.javaClass.name
         if (view is ViewGroup) {
-            for (i in 0 until minOf(view.childCount, 32)) collectResourceNames(view.getChildAt(i), depth + 1, out)
+            for (i in 0 until minOf(view.childCount, 32)) {
+                if (visited[0] >= 260) break
+                collectResourceNames(view.getChildAt(i), depth + 1, out, visited)
+            }
         }
     }
 }

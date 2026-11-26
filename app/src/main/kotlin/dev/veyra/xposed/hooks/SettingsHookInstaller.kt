@@ -153,7 +153,8 @@ object SettingsHookInstaller {
                         val prefClass = preference?.javaClass?.name.orEmpty()
                         val contextActivity = findActivity(itemView.context)
                         if (contextActivity?.packageName == "com.android.settings") {
-                            val page = SettingsUiEngine.currentPage(contextActivity, itemView)
+                            val pageRoot = contextActivity.findViewById<View>(android.R.id.content)
+                            val page = SettingsUiEngine.currentPage(contextActivity, pageRoot)
                             val parent = preference?.let { invokeNoArg(it, "getParent") }
                             val previous = if (position > 0) getAdapterItem(adapter, position - 1) else null
                             val next = getAdapterItem(adapter, position + 1)

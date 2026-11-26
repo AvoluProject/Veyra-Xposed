@@ -1,4 +1,4 @@
-# Implementation status: 1.0.0 Premium source package
+# Implementation status: 1.0.1 structured source package
 
 ## Included
 
@@ -21,3 +21,16 @@
 ## Safe rollback
 
 If Settings behaves incorrectly, disable Veyra in LSPosed and force-stop Settings. Veyra does not patch or replace the system Settings APK and does not modify `/system`.
+
+
+## Build structure update (1.0.1)
+
+- Pinned Android Gradle Plugin 9.1.1, Gradle 9.3.1, JDK 17, and AGP built-in Kotlin.
+- Uses the minor-versioned Android 17 compile platform API 37.0 required by libxposed 102.
+- Uses the published Maven Central artifacts `io.github.libxposed:api:102.0.0` and `io.github.libxposed:service:102.0.0`.
+- Keeps `targetSdk` at 36; `compileSdk` is not the same as `targetSdk`.
+- Adds a Termux in-place upgrade helper and stricter offline metadata checks.
+- Saves and restores additional view properties when Veyra is disabled, including text size, all-caps state, scroll settings, switch thumb/track tints, and category descendants.
+- Bounds Settings view-tree classification, styling, and diagnostics to avoid unbounded recursive walks on large preference hierarchies.
+
+The Android release build still needs to be run by GitHub Actions. Static validation is not proof of successful APK compilation or runtime compatibility.

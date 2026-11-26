@@ -81,10 +81,9 @@ object SettingsUiEngine {
                 "top_level_security_privacy_category", "top_level_support_category"
             ) || preferenceKey?.endsWith("_category") == true
 
-        val old = itemView.getTag(R.id.veyra_snapshot) as? ViewState
         val signature = 31 * config.hashCode() + (preferenceKey?.hashCode() ?: preferenceClass.hashCode())
         val oldSignature = itemView.getTag(R.id.veyra_signature) as? Int
-        if (old != null && oldSignature != signature) restoreOne(itemView)
+        if (oldSignature != null && oldSignature != signature) restoreTree(itemView)
         val state = snapshot(itemView)
 
         if (category) {
@@ -130,7 +129,11 @@ object SettingsUiEngine {
         itemView.setTag(R.id.veyra_signature, signature)
     }
 
-    private fun styleCategoryText(root: View, palette: Palette) {
+    private fun styleCategoryText(root: View, palette: Palette, depth: Int = 0, visited: IntArray = intArrayOf(0)) {
+        if (depth > 12 || visited[0] >= 240) return
+        visited[0]++
+        // Category labels are styled recursively, so save every descendant before mutation.
+        snapshot(root)
         if (root is TextView) {
             root.setTextColor(palette.secondaryText)
             root.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -138,11 +141,20 @@ object SettingsUiEngine {
             root.letterSpacing = 0.035f
             root.isAllCaps = false
         }
-        if (root is ViewGroup) for (i in 0 until root.childCount) styleCategoryText(root.getChildAt(i), palette)
+        if (root is ViewGroup) {
+            for (i in 0 until minOf(root.childCount, 40)) {
+                if (visited[0] >= 240) break
+                styleCategoryText(root.getChildAt(i), palette, depth + 1, visited)
+            }
+        }
     }
 
-    private fun styleViewTree(activity: Activity, view: View, palette: Palette, config: VeyraConfig, depth: Int) {
-        if (depth > 17) return
+    private fun styleViewTree(
+        activity: Activity, view: View, palette: Palette, config: VeyraConfig,
+        depth: Int, visited: IntArray = intArrayOf(0)
+    ) {
+        if (depth > 17 || visited[0] >= 600) return
+        visited[0]++
         snapshot(view)
         val entry = resourceName(view).orEmpty().lowercase()
         val className = view.javaClass.name.lowercase()
@@ -186,13 +198,22 @@ object SettingsUiEngine {
                 view.isVerticalScrollBarEnabled = false
             }
             for (index in 0 until minOf(view.childCount, 120)) {
-                styleViewTree(activity, view.getChildAt(index), palette, config, depth + 1)
+                if (visited[0] >= 600) break
+                styleViewTree(activity, view.getChildAt(index), palette, config, depth + 1, visited)
             }
         }
     }
 
     private fun tintSwitchByReflection(view: CompoundButton, palette: Palette) {
         if (!view.javaClass.name.contains("switch", ignoreCase = true)) return
+        // Only tint implementations whose original colors can also be read and restored.
+        val restorable = runCatching {
+            view.javaClass.getMethod("getThumbTintList")
+            view.javaClass.getMethod("getTrackTintList")
+            view.javaClass.getMethod("setThumbTintList", ColorStateList::class.java)
+            view.javaClass.getMethod("setTrackTintList", ColorStateList::class.java)
+        }.isSuccess
+        if (!restorable) return
         val checked = ColorStateList.valueOf(Color.WHITE)
         val unchecked = ColorStateList.valueOf(if (palette.isLight) 0xFFF7F7F8.toInt() else 0xFFE5E5EA.toInt())
         val thumb = ColorStateList(arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
@@ -253,14 +274,23 @@ object SettingsUiEngine {
             textColors = (view as? TextView)?.textColors,
             hintColors = (view as? EditText)?.hintTextColors,
             typeface = (view as? TextView)?.typeface,
+            textSizePx = (view as? TextView)?.textSize,
+            allCaps = (view as? TextView)?.isAllCaps,
             letterSpacing = (view as? TextView)?.letterSpacing,
             buttonTint = (view as? CompoundButton)?.buttonTintList,
+            switchThumbTint = readSwitchTint(view, "getThumbTintList"),
+            switchTrackTint = readSwitchTint(view, "getTrackTintList"),
+            hasSwitchThumbTint = hasSwitchTintGetter(view, "getThumbTintList"),
+            hasSwitchTrackTint = hasSwitchTintGetter(view, "getTrackTintList"),
             progressTint = (view as? ProgressBar)?.progressTintList,
             progressBackgroundTint = (view as? ProgressBar)?.progressBackgroundTintList,
             seekThumbTint = (view as? SeekBar)?.thumbTintList,
             marginLeft = lp?.leftMargin ?: 0, marginTop = lp?.topMargin ?: 0,
             marginRight = lp?.rightMargin ?: 0, marginBottom = lp?.bottomMargin ?: 0,
             elevation = view.elevation, clipToOutline = view.clipToOutline,
+            clipToPadding = (view as? ViewGroup)?.clipToPadding,
+            overScrollMode = view.overScrollMode,
+            verticalScrollBarEnabled = view.isVerticalScrollBarEnabled,
         )
         view.setTag(R.id.veyra_snapshot, state)
         return state
@@ -275,10 +305,14 @@ object SettingsUiEngine {
         (view as? TextView)?.let {
             s.textColors?.let { colors -> it.setTextColor(colors) }
             s.typeface?.let { type -> it.typeface = type }
+            s.textSizePx?.let { size -> it.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, size) }
+            s.allCaps?.let { allCaps -> it.isAllCaps = allCaps }
             s.letterSpacing?.let { spacing -> it.letterSpacing = spacing }
         }
         (view as? EditText)?.let { s.hintColors?.let(it::setHintTextColor) }
         (view as? CompoundButton)?.buttonTintList = s.buttonTint
+        if (s.hasSwitchThumbTint) restoreSwitchTint(view, "setThumbTintList", s.switchThumbTint)
+        if (s.hasSwitchTrackTint) restoreSwitchTint(view, "setTrackTintList", s.switchTrackTint)
         (view as? ProgressBar)?.let {
             it.progressTintList = s.progressTint
             it.progressBackgroundTintList = s.progressBackgroundTint
@@ -286,6 +320,9 @@ object SettingsUiEngine {
         (view as? SeekBar)?.thumbTintList = s.seekThumbTint
         view.elevation = s.elevation
         view.clipToOutline = s.clipToOutline
+        if (view is ViewGroup) s.clipToPadding?.let { clip -> view.clipToPadding = clip }
+        view.overScrollMode = s.overScrollMode
+        view.isVerticalScrollBarEnabled = s.verticalScrollBarEnabled
         val lp = view.layoutParams as? ViewGroup.MarginLayoutParams
         if (lp != null) {
             lp.setMargins(s.marginLeft, s.marginTop, s.marginRight, s.marginBottom)
@@ -293,6 +330,21 @@ object SettingsUiEngine {
         }
         view.setTag(R.id.veyra_snapshot, null)
         view.setTag(R.id.veyra_signature, null)
+    }
+
+    private fun readSwitchTint(view: View, getter: String): ColorStateList? =
+        if (view !is CompoundButton) null else runCatching {
+            view.javaClass.getMethod(getter).invoke(view) as? ColorStateList
+        }.getOrNull()
+
+    private fun hasSwitchTintGetter(view: View, getter: String): Boolean =
+        view is CompoundButton && runCatching { view.javaClass.getMethod(getter) }.isSuccess
+
+    private fun restoreSwitchTint(view: View, setter: String, value: ColorStateList?) {
+        if (view !is CompoundButton) return
+        runCatching {
+            view.javaClass.getMethod(setter, ColorStateList::class.java).invoke(view, value)
+        }
     }
 
     private fun restoreTree(view: View) {
@@ -310,10 +362,15 @@ object SettingsUiEngine {
         val background: Drawable?, val foreground: Drawable?,
         val paddingLeft: Int, val paddingTop: Int, val paddingRight: Int, val paddingBottom: Int,
         val minimumHeight: Int, val textColors: ColorStateList?, val hintColors: ColorStateList?,
-        val typeface: Typeface?, val letterSpacing: Float?, val buttonTint: ColorStateList?,
+        val typeface: Typeface?, val textSizePx: Float?, val allCaps: Boolean?,
+        val letterSpacing: Float?, val buttonTint: ColorStateList?,
+        val switchThumbTint: ColorStateList?, val switchTrackTint: ColorStateList?,
+        val hasSwitchThumbTint: Boolean, val hasSwitchTrackTint: Boolean,
         val progressTint: ColorStateList?, val progressBackgroundTint: ColorStateList?, val seekThumbTint: ColorStateList?,
         val marginLeft: Int, val marginTop: Int, val marginRight: Int, val marginBottom: Int,
         val elevation: Float, val clipToOutline: Boolean,
+        val clipToPadding: Boolean?, val overScrollMode: Int,
+        val verticalScrollBarEnabled: Boolean,
     )
 
     private data class WindowState(
