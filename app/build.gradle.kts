@@ -52,6 +52,6 @@ android {
 dependencies {
     // API implementation is supplied by the installed LSPosed-compatible framework.
     compileOnly("io.github.libxposed:api:102.0.0")
-    implementation("io.github.libxposed:service:102.0.1")
+    implementation("io.github.libxposed:service:102.0.0")
     implementation("androidx.dynamicanimation:dynamicanimation:1.0.0")
 }
